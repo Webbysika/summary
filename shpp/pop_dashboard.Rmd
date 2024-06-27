@@ -1,0 +1,241 @@
+
+library(shiny)
+library(leaflet)
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(plotly)
+library(DT)
+library(rsconnect)
+library(quarto)
+# Read shapefiles
+province <- st_read("Province.shp")
+district <- st_read("District.shp")
+constituencies <- st_read("ConstituencyF.shp")
+wards <- st_read("Ward.shp")
+
+ui <- fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      h4("Population by Gender"),
+      plotlyOutput("genderPopGraph"),
+      br(),
+      h4("Population by Region"),
+      plotlyOutput("regionPopGraph"),
+      br(),
+      downloadButton("downloadProvince", "Download Province Shapefile"),
+      downloadButton("downloadDistrict", "Download District Shapefile"),
+      downloadButton("downloadConstituency", "Download Constituency Shapefile"),
+      downloadButton("downloadWards", "Download Wards Shapefile"),
+      downloadButton("downloadData", "Download CSV Data")
+    ),
+    mainPanel(
+      fluidRow(
+        column(
+          width = 12,
+          leafletOutput("map", height = 400)
+        )
+      ),
+      fluidRow(
+        column(
+          width = 12,
+          h4("Population Graph"),
+          selectInput("level", "Select Level:", choices = c("Province", "District", "Constituency")),
+          plotlyOutput("popGraph")
+        )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$map <- renderLeaflet({
+    leaflet() %>%
+      addProviderTiles("OpenStreetMap") %>%
+      addPolygons(data = wards, layerId = ~WARD_CODE,
+                  popup = ~paste("Ward: ", WARD_NAME, "<br>",
+                                 "Total Population: ", format(T_POP, big.mark = ","), "<br>",
+                                 "Total Male: ", format(T_Male, big.mark = ","), "<br>",
+                                 "Total Female: ", format(T_Female, big.mark = ","), "<br>",
+                                 "Total Rural: ", format(Tota_rural, big.mark = ","), "<br>",
+                                 "Male Rural: ", format(Male_Rural, big.mark = ","), "<br>",
+                                 "Female Rural: ", format(Femal_Rura, big.mark = ","), "<br>",
+                                 "Total Urban: ", format(Total_Urba, big.mark = ","), "<br>",
+                                 "Male Urban: ", format(Male_Urba, big.mark = ","), "<br>",
+                                 "Female Urban: ", format(Femal_Urb, big.mark = ",")),
+                  label = ~WARD_NAME,
+                  group = "Wards",
+                  color = "#C9C0DB", weight = 2, fillColor = "transparent") %>%
+      addPolygons(data = constituencies, layerId = ~CONST_CODE,
+                  popup = ~paste("Constituency: ", CONST_NAME, "<br>",
+                                 "Total Population: ", format(SUM_T_POP, big.mark = ","), "<br>",
+                                 "Total Male: ", format(SUM_T_Male, big.mark = ","), "<br>",
+                                 "Total Female: ", format(SUM_T_Fema, big.mark = ","), "<br>",
+                                 "Total Rural: ", format(SUM_Tota_r, big.mark = ","), "<br>",
+                                 "Male Rural: ", format(SUM_Male_R, big.mark = ","), "<br>",
+                                 "Female Rural: ", format(SUM_Femal_, big.mark = ","), "<br>",
+                                 "Total Urban: ", format(SUM_Total_, big.mark = ","), "<br>",
+                                 "Male Urban: ", format(SUM_Male_U, big.mark = ","), "<br>",
+                                 "Female Urban: ", format(SUM_Femal1, big.mark = ",")),
+                  label = ~CONST_NAME,
+                  group = "Constituencies",
+                  color = "#008000", weight = 2, fillColor = "transparent") %>%
+      addPolygons(data = district, layerId = ~DIST_CODE, 
+                  popup = ~paste("District: ", DIST_NAME, "<br>",
+                                 "Total Population: ", format(SUM_T_POP, big.mark = ","), "<br>",
+                                 "Total Male: ", format(SUM_T_Male, big.mark = ","), "<br>",
+                                 "Total Female: ", format(SUM_T_Fema, big.mark = ","), "<br>",
+                                 "Total Rural: ", format(SUM_Tota_r, big.mark = ","), "<br>",
+                                 "Male Rural: ", format(SUM_Male_R, big.mark = ","), "<br>",
+                                 "Female Rural: ", format(SUM_Femal_, big.mark = ","), "<br>",
+                                 "Total Urban: ", format(SUM_Total_, big.mark = ","), "<br>",
+                                 "Male Urban: ", format(SUM_Male_U, big.mark = ","), "<br>",
+                                 "Female Urban: ", format(SUM_Femal1, big.mark = ",")), 
+                  label = ~DIST_NAME,
+                  group = "District",
+                  color = "#809000", weight = 2, fillColor = "transparent") %>%
+      addPolygons(data = province, layerId = ~PROV_CODE, 
+                  popup = ~paste("Province: ", PROV_NAME, "<br>",
+                                 "Total Population: ", format(SUM_T_POP, big.mark = ","), "<br>",
+                                 "Total Male: ", format(SUM_T_Male, big.mark = ","), "<br>",
+                                 "Total Female: ", format(SUM_T_Fema, big.mark = ","), "<br>",
+                                 "Total Rural: ", format(SUM_Tota_r, big.mark = ","), "<br>",
+                                 "Male Rural: ", format(SUM_Male_R, big.mark = ","), "<br>",
+                                 "Female Rural: ", format(SUM_Femal_, big.mark = ","), "<br>",
+                                 "Total Urban: ", format(SUM_Total_, big.mark = ","), "<br>",
+                                 "Male Urban: ", format(SUM_Male_U, big.mark = ","), "<br>",
+                                 "Female Urban: ", format(SUM_Femal1, big.mark = ",")),  
+                  label = ~PROV_NAME,
+                  group = "Province",
+                  color = "black", weight = 2, fillColor = "transparent") %>%
+      addLayersControl(
+        overlayGroups = c("Province", "District", "Constituencies", "Wards"),
+        options = layersControlOptions(collapsed = FALSE)
+      )
+  })
+  
+  output$genderPopGraph <- renderPlotly({
+    province_data <- province %>%
+      arrange(desc(SUM_T_POP)) %>%
+      mutate(Female = SUM_T_Fema, Male = SUM_T_Male)
+    
+    p <- ggplot(province_data, aes(x = reorder(PROV_NAME, -SUM_T_POP))) +
+      geom_bar(aes(y = Female, fill = "Female"), stat = "identity", position = "stack") +
+      geom_bar(aes(y = Male, fill = "Male"), stat = "identity", position = "stack") +
+      theme_minimal() +
+      labs(title = "Population by Gender in Each Province", x = "Province", y = "Population") +
+      scale_y_continuous(labels = comma) +
+      scale_fill_manual(name = "Gender", values = c("Female" = "#FFB6C1", "Male" = "#87CEFA")) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    
+    ggplotly(p, tooltip = c("y")) %>% 
+      layout(hovermode = "x unified") %>%
+      event_register("plotly_click")
+  })
+  
+  output$regionPopGraph <- renderPlotly({
+    province_data <- province %>%
+      arrange(desc(SUM_T_POP)) %>%
+      mutate(Rural = SUM_Tota_r, Urban = SUM_Total_)
+    
+    p <- ggplot(province_data, aes(x = reorder(PROV_NAME, -SUM_T_POP))) +
+      geom_bar(aes(y = Rural, fill = "Rural"), stat = "identity", position = "stack") +
+      geom_bar(aes(y = Urban, fill = "Urban"), stat = "identity", position = "stack") +
+      theme_minimal() +
+      labs(title = "Population by Region in Each Province", x = "Province", y = "Population") +
+      scale_y_continuous(labels = comma) +
+      scale_fill_manual(name = "Region", values = c("Rural" = "#DAA520", "Urban" = "#1E90FF"))
+    
+    ggplotly(p, tooltip = c("y")) %>% 
+      layout(hovermode = "x unified") %>%
+      event_register("plotly_click")
+  })
+  
+  output$popGraph <- renderPlotly({
+    level <- input$level
+    if (level == "Province") {
+      province_data <- province %>% arrange(desc(SUM_T_POP))
+      p <- ggplot(province_data, aes(x = reorder(PROV_NAME, -SUM_T_POP), y = SUM_T_POP)) +
+        geom_bar(stat = "identity", fill = "#FFA07A") +
+        theme_minimal() +
+        labs(title = "Population by Province", x = "Province", y = "Total Population") +
+        scale_y_continuous(labels = comma) +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    } else if (level == "District") {
+      district_data <- district %>% arrange(desc(SUM_T_POP))
+      p <- ggplot(district_data, aes(x = reorder(DIST_NAME, -SUM_T_POP), y = SUM_T_POP)) +
+        geom_bar(stat = "identity", fill = "#FFA07A") +
+        theme_minimal() +
+        labs(title = "Population by District", x = "District", y = "Total Population") +
+        scale_y_continuous(labels = comma) +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    } else if (level == "Constituency") {
+      constituency_data <- constituencies %>% arrange(desc(SUM_T_POP))
+      p <- ggplot(constituency_data, aes(x = reorder(CONST_NAME, -SUM_T_POP), y = SUM_T_POP)) +
+        geom_bar(stat = "identity", fill = "#FFA07A") +
+        theme_minimal() +
+        labs(title = "Population by Constituency", x = "Constituency", y = "Total Population") +
+        scale_y_continuous(labels = comma) +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    }
+    
+    ggplotly(p, tooltip = c("y")) %>% 
+      layout(hovermode = "x unified") %>%
+      event_register("plotly_click")
+  })
+  
+  output$downloadData <- downloadHandler(
+    filename = function() {
+      paste("population_data-", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      write.csv(province, file)
+    }
+  )
+  
+  output$downloadProvince <- downloadHandler(
+    filename = function() {
+      paste("Province_shapefile-", Sys.Date(), ".zip", sep = "")
+    },
+    content = function(file) {
+      st_write(province, "Province.shp")
+      zip(file, files = c("Province.shp", "Province.dbf", "Province.shx", "Province.prj"))
+    }
+  )
+  
+  output$downloadDistrict <- downloadHandler(
+    filename = function() {
+      paste("District_shapefile-", Sys.Date(), ".zip", sep = "")
+    },
+    content = function(file) {
+      st_write(district, "District.shp")
+      zip(file, files = c("District.shp", "District.dbf", "District.shx", "District.prj"))
+    }
+  )
+  
+  output$downloadConstituency <- downloadHandler(
+    filename = function() {
+      paste("Constituency_shapefile-", Sys.Date(), ".zip", sep = "")
+    },
+    content = function(file) {
+      st_write(constituencies, "ConstituencyF.shp")
+      zip(file, files = c("ConstituencyF.shp", "ConstituencyF.dbf", "ConstituencyF.shx", "ConstituencyF.prj"))
+    }
+  )
+  
+  output$downloadWards <- downloadHandler(
+    filename = function() {
+      paste("Wards_shapefile-", Sys.Date(), ".zip", sep = "")
+    },
+    content = function(file) {
+      st_write(wards, "Ward.shp")
+      zip(file, files = c("Ward.shp", "Ward.dbf", "Ward.shx", "Ward.prj"))
+    }
+  )
+}
+
+shinyApp(ui, server)
+
+# Deploy the app
+rsconnect::deployApp()

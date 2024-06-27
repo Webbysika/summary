@@ -1,0 +1,12 @@
+name: POPULATION2
+title: POPULATION2
+username: zamstats2024
+account: zamstats2024
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 12232737
+bundleId: 8786619
+url: https://zamstats2024.shinyapps.io/POPULATION2/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
